@@ -13,16 +13,13 @@ function isBodyParseError(err: unknown): boolean {
   );
 }
 
-/** Converts unmatched routes into a standard 404 error response. */
+// Turns unmatched routes into a standard 404 response.
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
   next(AppError.notFound(`Cannot ${req.method} ${req.path}`));
 };
 
-/**
- * Global error handler — the ONLY place errors are turned into responses.
- * Express 5 automatically forwards rejected promises from async handlers
- * here, so services and handlers can simply `throw`.
- */
+// The only place errors become responses. Express 5 forwards rejected
+// promises from async handlers here — services just throw.
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   let appError: AppError;
 

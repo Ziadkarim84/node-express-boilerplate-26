@@ -2,14 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { config } from '../../config/index.js';
 import { registry } from '../../openapi/registry.js';
-import { checkDatabase, getCommitHash } from './health.service.js';
+import { checkDatabase, checkRedis, getCommitHash } from './health.service.js';
 
 export const healthRouter = Router();
 
-/**
- * GET /v1/health — liveness: is the process up? No dependency checks,
- * so orchestrators never restart the app because a dependency is down.
- */
+// Liveness: process is up. No dependency checks, so orchestrators don't
+// restart the app when a dependency is down.
 healthRouter.get('/', (_req, res) => {
   res.json({
     data: {
@@ -22,18 +20,15 @@ healthRouter.get('/', (_req, res) => {
   });
 });
 
-/**
- * GET /v1/health/ready — readiness: can this instance serve traffic?
- * Checks external dependencies (DB). Returns 503 when unhealthy.
- */
+// Readiness: checks external dependencies (DB). 503 when unhealthy.
 healthRouter.get('/ready', async (_req, res) => {
-  const database = await checkDatabase();
-  const healthy = database.healthy;
+  const [database, redis] = await Promise.all([checkDatabase(), checkRedis()]);
+  const healthy = database.healthy && (redis?.healthy ?? true);
 
   res.status(healthy ? 200 : 503).json({
     data: {
       status: healthy ? 'ok' : 'degraded',
-      checks: { database },
+      checks: { database, ...(redis ? { redis } : {}) },
     },
   });
 });

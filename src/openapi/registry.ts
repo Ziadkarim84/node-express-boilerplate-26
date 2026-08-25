@@ -10,10 +10,8 @@ import { config } from '../config/index.js';
 // before any schema definitions — importing `registry` guarantees that.
 extendZodWithOpenApi(z);
 
-/**
- * Each module registers its routes + schemas here (see users.schemas.ts).
- * One Zod schema = runtime validation + inferred TS types + OpenAPI docs.
- */
+// Modules register routes + schemas here: one Zod schema = validation +
+// inferred TS types + OpenAPI docs.
 export const registry = new OpenAPIRegistry();
 
 export function buildOpenApiDocument() {

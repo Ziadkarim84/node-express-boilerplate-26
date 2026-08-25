@@ -5,10 +5,8 @@ import { setupGracefulShutdown } from './common/utils/graceful-shutdown.js';
 import { config } from './config/index.js';
 import { initializeDatabase } from './db/index.js';
 
-/**
- * Process entrypoint: config is validated on import (fails fast),
- * then DB connectivity is verified before the server accepts traffic.
- */
+// Entrypoint: config validates on import (fails fast), DB connectivity is
+// verified before the server accepts traffic.
 async function main(): Promise<void> {
   await initializeDatabase();
 

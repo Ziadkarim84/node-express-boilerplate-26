@@ -6,26 +6,20 @@ export type ErrorDetail = {
 };
 
 export type ErrorBody = {
-  /** Machine-readable error code, e.g. VALIDATION_ERROR, NOT_FOUND */
-  code: string;
-  /** Human-readable message */
+  code: string; // machine-readable, e.g. VALIDATION_ERROR
   message: string;
-  /** Optional per-field breakdown (validation errors, etc.) */
-  details?: ErrorDetail[];
+  details?: ErrorDetail[]; // per-field breakdown for validation errors
 };
 
 /**
- * The single error type the API responds with.
- * Throw it (or use a static factory) anywhere in a handler or service;
- * the global error middleware turns it into a JSON response:
- *
- *   { "error": { "code": "...", "message": "...", "details": [...] } }
+ * The single error type the API responds with. Throw it (or a factory like
+ * AppError.notFound()) anywhere; the error middleware renders
+ * { error: { code, message, details? } }.
  */
 export class AppError extends Error {
   readonly statusCode: number;
   readonly code: string;
   readonly details?: ErrorDetail[];
-  /** Marks errors that are expected/handled, as opposed to bugs. */
   readonly isOperational = true;
 
   constructor(

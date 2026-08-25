@@ -1,10 +1,10 @@
-CREATE TABLE `users` (
+CREATE TABLE `examples` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `first_name` VARCHAR(100) NOT NULL,
-  `last_name` VARCHAR(100) NOT NULL,
-  `email` VARCHAR(255) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `code` VARCHAR(64) NOT NULL,
+  `price` DECIMAL(10, 2) NOT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_users_email` (`email`)
+  UNIQUE KEY `uq_examples_code` (`code`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

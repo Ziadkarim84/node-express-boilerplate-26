@@ -2,12 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { pinoHttp } from 'pino-http';
 import { logger } from '../logger/index.js';
 
-/**
- * Per-request logging with request-id correlation.
- * - Honors an incoming X-Request-Id header, otherwise generates a UUID.
- * - Echoes the id back on the response so clients/proxies can correlate.
- * - Exposes `req.log` — a child logger bound to the request id.
- */
+// Request logging with x-request-id correlation: honors an incoming header,
+// otherwise generates a UUID; exposes req.log bound to the request id.
 export const requestLogger = pinoHttp({
   logger,
   genReqId: (req, res) => {

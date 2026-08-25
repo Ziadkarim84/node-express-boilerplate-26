@@ -1,12 +1,8 @@
 import { pino } from 'pino';
 import { config } from '../../config/index.js';
 
-/**
- * Structured JSON logging with pino.
- * In development, logs are pretty-printed via pino-pretty.
- * Never use console.log in application code — use this logger,
- * or `req.log` inside request handlers (it carries the request id).
- */
+// Structured JSON logs via pino (pretty-printed in dev). Use req.log inside
+// request handlers (carries the request id), logger elsewhere. No console.log.
 export const logger = pino({
   level: config.env === 'test' ? 'silent' : config.logLevel,
   redact: {

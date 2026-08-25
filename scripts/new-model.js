@@ -1,14 +1,6 @@
 #!/usr/bin/env node
-/**
- * Scaffolds a new Sequelize model end to end:
- *   1. schema-migrations/{ts}.do/.undo.create-table-{table}.sql (prefilled DDL)
- *   2. src/db/models/{kebab-name}.model.ts (typed model class)
- *   3. registers the model in src/db/index.ts (import + init + export)
- *
- * Usage:
- *   npm run mg:newscaff modelName=OrderItem
- *   npm run mg:newscaff modelName=OrderItem tableName=order_items_v2
- */
+// Scaffolds a model: migration pair + typed model class + registration in
+// src/db/index.ts. Usage: npm run mg:newscaff modelName=OrderItem [tableName=x]
 import fs from 'node:fs';
 import path from 'node:path';
 

@@ -2,11 +2,8 @@ import { apiReference } from '@scalar/express-api-reference';
 import { Router } from 'express';
 import { buildOpenApiDocument } from './registry.js';
 
-/**
- * Serves the raw OpenAPI spec at /openapi.json and interactive API docs
- * at /docs (Scalar UI). Mounted only when config.docsEnabled is true
- * (default: everywhere except production).
- */
+// /openapi.json + interactive docs at /docs (Scalar). Mounted only when
+// config.docsEnabled (default: everywhere except production).
 export function createDocsRouter(): Router {
   const router = Router();
   const document = buildOpenApiDocument();

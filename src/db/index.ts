@@ -2,7 +2,7 @@ import { Sequelize, type Options } from 'sequelize';
 import { config } from '../config/index.js';
 import { logger } from '../common/logger/index.js';
 // models:imports (managed by `npm run mg:newscaff` — keep markers intact)
-import { initUserModel, User } from './models/user.model.js';
+import { initExampleModel, Example } from './models/example.model.js';
 // models:imports:end
 
 const { database } = config;
@@ -32,16 +32,16 @@ export const sequelize = new Sequelize(
 
 /* Initialize all models, then wire associations. */
 // models:init (managed by `npm run mg:newscaff` — keep markers intact)
-initUserModel(sequelize);
+initExampleModel(sequelize);
 // models:init:end
 
 // models:exports (managed by `npm run mg:newscaff` — keep markers intact)
-export { User };
+export { Example };
 // models:exports:end
 
 // Wire associations here, e.g. User.hasMany(Post); Post.belongsTo(User);
 
-/** Verifies connectivity at boot. Fails fast if the DB is unreachable. */
+// Verifies connectivity at boot — fails fast if the DB is unreachable.
 export async function initializeDatabase(): Promise<void> {
   await sequelize.authenticate();
   logger.info(

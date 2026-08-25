@@ -71,11 +71,11 @@ src/
 │   └── models/              # one typed model class per file
 └── modules/                 # feature modules (vertical slices)
     ├── health/              # /v1/health (liveness) + /v1/health/ready (readiness)
-    └── users/               # reference module
-        ├── users.router.ts  # HTTP layer: validate → call service → respond
-        ├── users.schemas.ts # Zod schemas + OpenAPI registration
-        ├── users.service.ts # business logic + DB access
-        └── users.service.test.ts
+    └── example/             # reference module — copy it to start a new module
+        ├── example.router.ts    # HTTP layer: authorize → validate → service → respond
+        ├── example.schemas.ts   # Zod schemas + OpenAPI registration
+        ├── example.service.ts   # business logic + DB access
+        └── example.service.test.ts
 ```
 
 ## Conventions
@@ -101,7 +101,7 @@ read `process.env` elsewhere.
 
 **Routing:** versioned under `/v1`. Breaking changes ship as `/v2` alongside `/v1`.
 
-**Adding a module:** copy `src/modules/users`, rename, add one `router.use(...)` line in `src/router.ts`,
+**Adding a module:** copy `src/modules/example`, rename, add one `router.use(...)` line in `src/router.ts`,
 scaffold the model + migration with `npm run mg:newscaff modelName=Thing`.
 
 ## Migrations
@@ -130,7 +130,7 @@ Synor config lives in `.synorrc.cjs` (CommonJS because the project is ESM) and r
 ## Health checks
 
 - `GET /v1/health` — **liveness**: process is up. No dependency checks, so orchestrators don't restart the app when a dependency is down.
-- `GET /v1/health/ready` — **readiness**: checks DB connectivity, returns 503 when degraded. Point load-balancer/k8s readiness probes here.
+- `GET /v1/health/ready` — **readiness**: checks DB connectivity (and Redis when configured), returns 503 when degraded. Point load-balancer/k8s readiness probes here.
 
 ## Docker
 
@@ -141,8 +141,55 @@ docker run -p 8080:8080 --env-file .env.production node-express-boilerplate
 
 Multi-stage build, dev dependencies pruned, runs as the unprivileged `node` user.
 
-## Where auth goes
+## Auth
 
-Auth is deliberately not included (it is service-specific at ShopUp — JWT/identity-service/session vary by service).
-The intended seams: a session middleware in `src/common/middlewares/` registered in `app.ts`, plus a
-`requirePermissions(...)` router-level middleware. Never commit keys — put them in env vars validated in `src/config`.
+Auth is delegated to ShopUp's central **identity service** — the same one shopup-lite uses. This
+service never stores credentials, issues tokens, or manages roles; it only consumes them.
+
+**Resolving the caller** — the global `sessionMiddleware` (in `app.ts`) populates `req.user` from,
+in order:
+
+1. `Authorization: jwt <token>` — an identity-service-issued RS256 JWT, verified **locally**
+   against `AUTH_JWT_PUBLIC_KEY` (base64 public key, subject `auth`, payload
+   `{ data: { user: { id, roleIds, scopeIds, permissions? } } }`). No network call.
+2. `Authorization: bearer <token>` (or `X-Access-Token`) — an identity-service session token,
+   resolved via `GET /v0/user` on the identity service (forwarding the caller's credentials),
+   cached per token for `AUTH_CACHE_TTL_SECONDS` (Redis when `REDIS_URL` is set, in-memory otherwise).
+3. Signed, httpOnly auth cookie — same resolution; invalid cookies are cleared.
+
+The middleware never rejects; enforcement is per-route, with both of shopup-lite's styles:
+
+```ts
+// Permission style (middlewares/authorize.ts)
+authorize(); // 401 unless authenticated
+authorize({ only: 'examples:create' }); // 403 unless the permission is granted
+authorize({ oneOf: ['a:read', 'a:x'] }); // at least one required
+authorizeRoles(['SYSADMIN']); // role keys → identity role ids (roleIdByKey)
+
+// Guard style (middlewares/security.ts — shopup-lite's services/security.js)
+router.use(isAuthenticated);
+adminRouter.use([isAuthenticated, onlySuperAdmin]);
+```
+
+**Permission checks**: a JWT's `permissions` claim is checked locally; bearer callers are checked
+via `POST /v0/user/permissions/check` on the identity service, forwarding their own auth header —
+exactly shopup-lite's flow. Role checks use `req.user.roleIds` against the static `roleIdByKey`
+map (`src/common/libs/auth.ts` — keep in sync with the identity service's role table).
+
+**Identity client** (`src/common/libs/identity-api.ts`): native `fetch`, request timeout, and a
+per-token cache keyed by sha256 of the auth header (`src/common/libs/cache.ts` — Redis-backed when
+`REDIS_URL` is configured, in-memory otherwise; Redis errors degrade to cache misses, never
+failures). Extend it with more `/v0` endpoints
+(roles, scopes, users) as needed. If the identity service is unreachable, requests proceed
+unauthenticated — public routes keep working, protected routes 401.
+
+**Endpoints**: only `GET /v1/auth/me` (current principal). Login, registration, logout and
+password management happen against the identity service directly.
+
+**Local development** — either point `IDENTITY_SERVICE_URL` at staging, or set `AUTH_SKIP=true`
+to inject a SYSADMIN principal (config rejects it in production; production also requires
+`IDENTITY_SERVICE_URL` and/or `AUTH_JWT_PUBLIC_KEY`, and a non-default `COOKIE_SECRET`).
+
+Deliberately not carried over from shopup-lite: hardcoded bypass tokens, `JIMMY_IDENTITY`,
+whitelisted URLs, the `{ isError, body }` envelope, and 403-for-everything (401 vs 403 are used
+correctly here).

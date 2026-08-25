@@ -21,10 +21,9 @@ declare module 'express-serve-static-core' {
 }
 
 /**
- * Validates request parts against Zod schemas.
- * The parsed (and transformed/coerced) values are stored on `req.validated`
- * — Express 5 makes req.query a read-only getter, so we don't mutate it.
- * Read them back in the handler with `getValidated<typeof schemas>(req)`.
+ * Validates request parts against Zod schemas. Parsed values land on
+ * req.validated (Express 5 makes req.query read-only) — read them back with
+ * getValidated<typeof schemas>(req).
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
   return (req, _res, next) => {
