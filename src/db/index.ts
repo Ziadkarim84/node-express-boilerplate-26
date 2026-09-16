@@ -1,49 +1,25 @@
-import { Sequelize, type Options } from 'sequelize';
 import { config } from '../config/index.js';
 import { logger } from '../common/logger/index.js';
+import { sequelize } from './sequelize.js';
+// Each model initialises itself on import and declares its relations in a
+// static associate(); associate() runs here once every class is loaded.
 // models:imports (managed by `npm run mg:newscaff` — keep markers intact)
-import { initExampleModel, Example } from './models/example.model.js';
+import { Example } from './models/example.model.js';
+import { User } from './models/user.model.js';
 // models:imports:end
 
-const { database } = config;
+// models:list (managed by `npm run mg:newscaff` — keep markers intact)
+const models = [Example, User];
+// models:list:end
 
-const options: Options = {
-  dialect: 'mysql',
-  host: database.host,
-  port: database.port,
-  pool: database.pool,
-  dialectOptions: { decimalNumbers: true },
-  define: {
-    charset: 'utf8mb4',
-    collate: 'utf8mb4_unicode_ci',
-    underscored: true,
-    timestamps: true,
-  },
-  logging:
-    config.env === 'development' ? (sql: string) => logger.debug(sql) : false,
-};
+for (const model of models) model.associate?.();
 
-export const sequelize = new Sequelize(
-  database.name,
-  database.username,
-  database.password,
-  options,
-);
-
-/* Initialize all models, then wire associations. */
-// models:init (managed by `npm run mg:newscaff` — keep markers intact)
-initExampleModel(sequelize);
-// models:init:end
-
-// models:exports (managed by `npm run mg:newscaff` — keep markers intact)
-export { Example };
-// models:exports:end
-
-// Wire associations here, e.g. User.hasMany(Post); Post.belongsTo(User);
+export { sequelize, Example, User };
 
 // Verifies connectivity at boot — fails fast if the DB is unreachable.
 export async function initializeDatabase(): Promise<void> {
   await sequelize.authenticate();
+  const { database } = config;
   logger.info(
     `Database connected (${database.host}:${database.port}/${database.name})`,
   );

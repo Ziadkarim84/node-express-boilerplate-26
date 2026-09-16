@@ -1,0 +1,45 @@
+name: Migrate
+
+# Applies pending migrations and seeds to a deployed environment. Run this
+# before rolling out an image that depends on new tables.
+# Secrets per environment: DATABASE_HOST, DATABASE_PORT, DATABASE_NAME,
+# DATABASE_USERNAME, DATABASE_PASSWORD (a migration user with DDL grants and
+# the mysql_native_password plugin, see README).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: environment
+        required: true
+      seed:
+        description: Also run seeds (idempotent reference data)
+        type: boolean
+        default: true
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      NODE_ENV: ${{ inputs.environment }}
+      DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+      DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+      DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+      DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
+      DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Pending migrations
+        run: npm run mg:info
+      - name: Apply migrations
+        run: ./scripts/migrate-to-latest-version.sh --outOfOrder
+      - name: Seed reference data
+        if: ${{ inputs.seed }}
+        run: npm run seed

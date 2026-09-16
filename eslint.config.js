@@ -46,5 +46,11 @@ export default tseslint.config(
     files: ['**/*.{js,cjs}', 'scripts/**'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // CommonJS files (.synorrc.cjs is loaded by Synor's CLI as CJS).
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
   prettier,
 );

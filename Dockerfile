@@ -27,9 +27,9 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
-COPY schema-migrations ./schema-migrations
-COPY scripts ./scripts
-COPY .synorrc.cjs ./
+
+# Migrations and seeds are NOT run from this image (Synor and tsx are dev
+# dependencies). They run from the pipeline: .github/workflows/migrate.yml.
 
 # Run as the unprivileged user that ships with the node image
 USER node

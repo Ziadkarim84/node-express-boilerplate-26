@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 import { AppError } from '../errors/app-error.js';
 import { roleIdByKey, type RoleKey } from '../libs/auth.js';
 import {
-  checkPermissions,
+  checkPermissionsCached,
   getCurrentUserCached,
 } from '../libs/identity-api.js';
 import { getForwardableAuthHeader } from '../libs/session.js';
@@ -54,7 +54,7 @@ export function authorize(options?: AuthorizeOptions): RequestHandler {
         next(AppError.unauthorized());
         return;
       }
-      granted = await checkPermissions(authHeader, required);
+      granted = await checkPermissionsCached(authHeader, required);
     }
 
     if (granted.length === 0) {

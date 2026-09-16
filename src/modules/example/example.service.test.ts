@@ -60,7 +60,7 @@ describe('example.service', () => {
       expect(Example.create).toHaveBeenCalledWith({
         name: 'Sample thing',
         code: 'SAMPLE-1',
-        price: 4.5,
+        price: '4.50',
       });
     });
 

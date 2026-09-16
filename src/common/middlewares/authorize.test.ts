@@ -4,7 +4,7 @@ import type { AppError } from '../errors/app-error.js';
 import { roleIdByKey, type SessionUser } from '../libs/auth.js';
 
 vi.mock('../libs/identity-api.js', () => ({
-  checkPermissions: vi.fn(),
+  checkPermissionsCached: vi.fn(),
   getCurrentUserCached: vi.fn(),
 }));
 vi.mock('../libs/session.js', () => ({
@@ -47,14 +47,14 @@ describe('authorize', () => {
 
   it('passes any authenticated user when no permissions required', async () => {
     expect(await run(authorize(), bearerUser)).toBeUndefined();
-    expect(identityApi.checkPermissions).not.toHaveBeenCalled();
+    expect(identityApi.checkPermissionsCached).not.toHaveBeenCalled();
   });
 
   it('checks the JWT permissions claim locally — no identity call', async () => {
     expect(
       await run(authorize({ only: 'users:read' }), jwtUser),
     ).toBeUndefined();
-    expect(identityApi.checkPermissions).not.toHaveBeenCalled();
+    expect(identityApi.checkPermissionsCached).not.toHaveBeenCalled();
   });
 
   it('403 when the JWT claim lacks the permission', async () => {
@@ -63,20 +63,20 @@ describe('authorize', () => {
   });
 
   it('consults the identity service for bearer users', async () => {
-    identityApi.checkPermissions.mockResolvedValue(['users:read']);
+    identityApi.checkPermissionsCached.mockResolvedValue(['users:read']);
     const err = await run(
       authorize({ oneOf: ['users:read', 'users:export'] }),
       bearerUser,
     );
     expect(err).toBeUndefined();
-    expect(identityApi.checkPermissions).toHaveBeenCalledWith(
+    expect(identityApi.checkPermissionsCached).toHaveBeenCalledWith(
       'bearer some-token',
       ['users:read', 'users:export'],
     );
   });
 
   it('403 when the identity service grants none of the permissions', async () => {
-    identityApi.checkPermissions.mockResolvedValue([]);
+    identityApi.checkPermissionsCached.mockResolvedValue([]);
     const err = await run(authorize({ only: 'users:create' }), bearerUser);
     expect(err?.statusCode).toBe(403);
   });

@@ -70,8 +70,8 @@ const modelContent = `import {
   type CreationOptional,
   type InferAttributes,
   type InferCreationAttributes,
-  type Sequelize,
 } from 'sequelize';
+import { sequelize } from '../sequelize.js';
 
 export class ${modelName} extends Model<
   InferAttributes<${modelName}>,
@@ -82,30 +82,27 @@ export class ${modelName} extends Model<
   // declare name: string;
   declare readonly createdAt: CreationOptional<Date>;
   declare readonly updatedAt: CreationOptional<Date>;
+
+  static associate(): void {
+    // TODO: relations, e.g. ${modelName}.belongsTo(Other, { as: 'other', foreignKey: 'otherId' });
+  }
 }
 
-export function init${modelName}Model(sequelize: Sequelize): typeof ${modelName} {
-  ${modelName}.init(
-    {
-      id: {
-        type: DataTypes.INTEGER.UNSIGNED,
-        allowNull: false,
-        primaryKey: true,
-        autoIncrement: true,
-      },
-      // TODO: define your columns here, e.g.:
-      // name: { type: DataTypes.STRING(100), allowNull: false },
-      createdAt: DataTypes.DATE,
-      updatedAt: DataTypes.DATE,
+${modelName}.init(
+  {
+    id: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: false,
+      primaryKey: true,
+      autoIncrement: true,
     },
-    {
-      sequelize,
-      tableName: '${tableName}',
-    },
-  );
-
-  return ${modelName};
-}
+    // TODO: define your columns here, e.g.:
+    // name: { type: DataTypes.STRING(100), allowNull: false },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: '${tableName}' },
+);
 `;
 
 fs.writeFileSync(modelFilePath, modelContent);
@@ -114,24 +111,28 @@ console.log(`📁 Model:     ${modelFilePath}`);
 /* 3 ─ register in src/db/index.ts via the marker comments */
 let dbIndex = fs.readFileSync(dbIndexPath, 'utf8');
 
-const insertions = [
-  {
-    marker: '// models:imports:end',
-    line: `import { init${modelName}Model, ${modelName} } from './models/${kebabCase(modelName)}.model.js';`,
-  },
-  { marker: '// models:init:end', line: `init${modelName}Model(sequelize);` },
-  { marker: '// models:exports:end', line: `export { ${modelName} };` },
-];
-
-for (const { marker, line } of insertions) {
-  if (!dbIndex.includes(marker)) {
-    console.error(
-      `⚠️  Marker "${marker}" not found in ${dbIndexPath} — register the model manually.`,
-    );
-    process.exit(1);
-  }
-  dbIndex = dbIndex.replace(marker, `${line}\n${marker}`);
+const importMarker = '// models:imports:end';
+const listMarker = '// models:list:end';
+if (!dbIndex.includes(importMarker) || !dbIndex.includes(listMarker)) {
+  console.error(
+    `⚠️  Markers not found in ${dbIndexPath} — register the model manually.`,
+  );
+  process.exit(1);
 }
+dbIndex = dbIndex.replace(
+  importMarker,
+  `import { ${modelName} } from './models/${kebabCase(modelName)}.model.js';\n${importMarker}`,
+);
+// append to the models array and the export list
+dbIndex = dbIndex.replace(/const models = \[([^\]]*)\];/, (_m, inner) => {
+  const items = inner.trim()
+    ? `${inner.trim().replace(/,$/, '')}, ${modelName}`
+    : modelName;
+  return `const models = [${items}];`;
+});
+dbIndex = dbIndex.replace(/export \{ sequelize,([^}]*)\};/, (_m, inner) => {
+  return `export { sequelize,${inner.trimEnd().replace(/,$/, '')}, ${modelName} };`;
+});
 
 fs.writeFileSync(dbIndexPath, dbIndex);
 console.log(`📁 Registered in ${dbIndexPath}`);

@@ -37,3 +37,6 @@ pids
 .DS_Store
 .idea/
 *.swp
+
+# local file-storage fallback (dev only)
+.storage/

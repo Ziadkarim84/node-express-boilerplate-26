@@ -3,6 +3,7 @@ import { config } from '../../config/index.js';
 import { roleIdByKey, type SessionUser } from '../libs/auth.js';
 import { getCurrentUserCached } from '../libs/identity-api.js';
 import { isJwtEnabled, verifyJwt } from '../libs/jwt.js';
+import { resolveLocalUserId } from '../libs/users-mirror.js';
 import {
   clearAuthCookie,
   getCookieToken,
@@ -12,14 +13,18 @@ import {
 declare module 'express-serve-static-core' {
   interface Request {
     user?: SessionUser;
-    tokenType?: 'bearer' | 'jwt';
+    /** Local users.id for the caller — the value *_by columns store. */
+    actorId?: number;
+    tokenType?: 'bearer' | 'jwt' | 'cookie';
   }
 }
 
-// Injected when AUTH_SKIP=true (config rejects it in production).
+// Injected when JIMMY_AUTH=true (config rejects it in production). The
+// identity id comes from JIMMY_IDENTITY so a tester can act as different
+// users and exercise two-person rules (create vs approve).
 const devUser: SessionUser = {
-  id: 0,
-  email: 'dev@localhost',
+  id: config.auth.jimmyIdentity,
+  email: `dev+${String(config.auth.jimmyIdentity)}@localhost`,
   firstName: 'Dev',
   lastName: 'Superadmin',
   roleIds: [roleIdByKey.SYSADMIN],
@@ -61,19 +66,26 @@ export const sessionMiddleware: RequestHandler = async (req, res, next) => {
       }
 
       if (user) {
-        req.tokenType = 'bearer';
+        req.tokenType = fromCookie ? 'cookie' : 'bearer';
       } else if (fromCookie) {
         clearAuthCookie(res);
       }
     }
   }
 
-  if (!user && config.auth.skip) {
+  if (!user && config.auth.jimmy) {
     user = devUser;
   }
 
   if (user) {
     req.user = user;
+    try {
+      req.actorId = await resolveLocalUserId(user);
+    } catch (err) {
+      // Degrade to unauthenticated: routes that need an actor will 401.
+      req.log.error({ err }, 'sessionMiddleware: could not resolve local user');
+      req.user = undefined;
+    }
   }
 
   next();

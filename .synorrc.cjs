@@ -11,6 +11,7 @@ const { FileSourceEngine } = require('@synor/source-file');
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Same order as src/config/env.ts
 [`.env.${NODE_ENV}.local`, `.env.${NODE_ENV}`, '.env.local', '.env']
   .map((f) => path.resolve(f))
   .filter((f) => fs.existsSync(f))
