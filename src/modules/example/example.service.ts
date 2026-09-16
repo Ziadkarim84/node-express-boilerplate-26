@@ -1,4 +1,5 @@
 import { AppError } from '../../common/errors/app-error.js';
+import { toAmount } from '../../common/utils/money.js';
 import { Example } from '../../db/index.js';
 import type { CreateExampleInput } from './example.schemas.js';
 
@@ -35,6 +36,6 @@ export async function createExample(
   return Example.create({
     name: input.name,
     code: input.code,
-    price: input.price,
+    price: toAmount(input.price),
   });
 }

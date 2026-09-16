@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { registry } from '../../openapi/registry.js';
+import { okSchema } from '../../common/utils/response.js';
 
 const sessionUserSchema = z
   .object({
@@ -35,7 +36,7 @@ registry.registerPath({
       description: 'The authenticated user',
       content: {
         'application/json': {
-          schema: z.object({ data: sessionUserSchema }),
+          schema: okSchema(sessionUserSchema),
         },
       },
     },

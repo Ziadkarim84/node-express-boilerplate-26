@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { registry } from '../../openapi/registry.js';
+import { okSchema } from '../../common/utils/response.js';
 
 // One Zod schema per request/response shape: drives runtime validation,
 // static types (z.infer), and the OpenAPI docs (registerPath below).
@@ -9,7 +10,7 @@ export const exampleSchema = z
     id: z.number().int(),
     name: z.string(),
     code: z.string(),
-    price: z.number(),
+    price: z.string(), // DECIMAL columns are strings, see common/utils/money.ts
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -56,7 +57,7 @@ registry.registerPath({
       description: 'List of examples',
       content: {
         'application/json': {
-          schema: z.object({ data: z.array(exampleSchema) }),
+          schema: okSchema(z.array(exampleSchema)),
         },
       },
     },
@@ -75,7 +76,7 @@ registry.registerPath({
     200: {
       description: 'The example',
       content: {
-        'application/json': { schema: z.object({ data: exampleSchema }) },
+        'application/json': { schema: okSchema(exampleSchema) },
       },
     },
     404: { description: 'Example not found' },
@@ -97,7 +98,7 @@ registry.registerPath({
     201: {
       description: 'Created example',
       content: {
-        'application/json': { schema: z.object({ data: exampleSchema }) },
+        'application/json': { schema: okSchema(exampleSchema) },
       },
     },
     400: { description: 'Validation error' },

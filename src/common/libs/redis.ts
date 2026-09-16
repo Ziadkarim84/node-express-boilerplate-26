@@ -8,6 +8,10 @@ export const redis: Redis | null = config.redis.url
   ? new Redis(config.redis.url, {
       maxRetriesPerRequest: 2,
       enableOfflineQueue: false,
+      // A Redis that accepts TCP but never answers must not stall every
+      // authenticated request: fail the command fast and fall through.
+      connectTimeout: config.redis.connectTimeoutMs,
+      commandTimeout: config.redis.commandTimeoutMs,
     })
   : null;
 

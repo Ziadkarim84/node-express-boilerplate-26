@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ok } from '../../common/utils/response.js';
 import { authorize } from '../../common/middlewares/authorize.js';
 import { getValidated, validate } from '../../common/middlewares/validate.js';
 import {
@@ -22,7 +23,7 @@ exampleRouter.get(
       query.limit,
       query.offset,
     );
-    res.json({ data: examples });
+    ok(res, examples);
   },
 );
 
@@ -33,7 +34,7 @@ exampleRouter.get(
   async (req, res) => {
     const { params } = getValidated<typeof getExampleSchemas>(req);
     const example = await exampleService.getExampleById(params.exampleId);
-    res.json({ data: example });
+    ok(res, example);
   },
 );
 
@@ -44,6 +45,6 @@ exampleRouter.post(
   async (req, res) => {
     const { body } = getValidated<typeof createExampleSchemas>(req);
     const example = await exampleService.createExample(body);
-    res.status(201).json({ data: example });
+    ok(res, example, 201);
   },
 );

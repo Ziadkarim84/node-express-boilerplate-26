@@ -22,15 +22,42 @@ Production-ready Node.js + Express 5 + TypeScript boilerplate.
 ## Getting started
 
 ```sh
-nvm use                  # Node 24 (.nvmrc)
-npm install
-cp .env.example .env.local   # adjust DB credentials if needed
+git clone <this repo>
+cd node-express-boilerplate
 
-# create the database, then run migrations
-npm run mg:latest
+nvm use                      # Node 24 from .nvmrc (nvm install 24 if missing)
+npm install                  # also installs git hooks and applies patches/
 
-npm run dev              # http://localhost:8080 — docs at /docs
+                             # .env.development (committed) already matches docker-compose;
+                             # personal overrides go in .env.development.local (git-ignored),
+                             # e.g. JIMMY_AUTH=true to work without the identity service
+
+npm run infra:up             # MySQL 8.4 (host port 3307) + Redis 7 (6380), waits until healthy
+npm run mg:latest            # creates the database if needed, applies all migrations
+npm run seed                 # loads reference data (idempotent, safe to re-run)
+
+npm run dev                  # http://localhost:8080 — docs at /docs
 ```
+
+Check it is alive:
+
+```sh
+curl localhost:8080/v1/health          # liveness
+curl localhost:8080/v1/health/ready    # DB and Redis reachable
+npm test                               # unit and app tests, no DB needed
+```
+
+Notes:
+
+- Docker Desktop must be running before `infra:up`. Without Docker, point `DATABASE_*` and
+  `REDIS_URL` in `.env.development.local` at your own MySQL 8 and Redis; the MySQL user must use the
+  `mysql_native_password` plugin (Synor's driver does not speak `caching_sha2_password`).
+- Host ports are 3307 and 6380 on purpose so they do not collide with other local containers.
+- Uploads land in `.storage/` while `GCS_BUCKET` is unset. Set the bucket plus
+  `GOOGLE_APPLICATION_CREDENTIALS` to use real GCS.
+- `patches/` holds a one-line fix to `@synor/database-mysql` for MySQL 8 (information_schema
+  returns upper-case column headers); `npm install` applies it via patch-package.
+- `npm run infra:down` stops the containers; data stays in Docker volumes.
 
 ## Scripts
 
@@ -67,8 +94,9 @@ src/
 │   ├── middlewares/         # error-handler, not-found, request-logger, validate
 │   └── utils/               # graceful shutdown
 ├── db/
-│   ├── index.ts             # Sequelize instance, model init, associations
-│   └── models/              # one typed model class per file
+│   ├── sequelize.ts         # the Sequelize instance (models import it directly)
+│   ├── index.ts             # imports every model, runs their associate(), re-exports
+│   └── models/              # one typed model class per file: init at load + static associate()
 └── modules/                 # feature modules (vertical slices)
     ├── health/              # /v1/health (liveness) + /v1/health/ready (readiness)
     └── example/             # reference module — copy it to start a new module
@@ -86,8 +114,10 @@ src/
 - **Service** — business logic and DB access. Throws `AppError` for expected failures.
 - **Model** — typed Sequelize classes. DDL lives in `schema-migrations/`; models never `sync()`.
 
-**Errors:** throw `AppError.notFound(...)` / `.conflict(...)` etc. anywhere; the global error middleware
-produces `{ "error": { "code", "message", "details?" } }`. Express 5 catches rejected promises from async
+**Responses:** one envelope everywhere. Success: `{ "isError": false, "body": <payload> }` via
+`ok(res, payload, status?)`. Failure: `{ "isError": true, "body": { "code", "message", "details?" } }`
+rendered by the global error middleware from any thrown `AppError.notFound(...)` / `.conflict(...)`.
+Lists put `{ data, meta: { page, pageSize, total } }` in `body`; `?sort=0|1` orders by id asc/desc. Express 5 catches rejected promises from async
 handlers automatically — never write try/catch just to call `next(err)`.
 
 **Validation + docs:** every request shape is a Zod schema in the module's `*.schemas.ts`. The same schema
@@ -121,9 +151,9 @@ npm run mg:newscaff modelName=OrderItem                          # → table `or
 npm run mg:newscaff modelName=OrderItem tableName=my_own_name    # override the table name
 ```
 
-Then add your columns to the generated `.do.` SQL file, mirror them in the model class, and run
-`npm run mg:latest`. Registration in `src/db/index.ts` is driven by the `// models:*` marker
-comments — keep them intact.
+Then add your columns to the generated `.do.` SQL file, mirror them in the model class (and its
+relations in `static associate()`), and run `npm run mg:latest`. Registration in `src/db/index.ts`
+is driven by the `// models:*` marker comments — keep them intact.
 
 Synor config lives in `.synorrc.cjs` (CommonJS because the project is ESM) and reads the same `.env` cascade as the app.
 
@@ -157,18 +187,14 @@ in order:
    cached per token for `AUTH_CACHE_TTL_SECONDS` (Redis when `REDIS_URL` is set, in-memory otherwise).
 3. Signed, httpOnly auth cookie — same resolution; invalid cookies are cleared.
 
-The middleware never rejects; enforcement is per-route, with both of shopup-lite's styles:
+The middleware never rejects; enforcement is per-route through one code path, so `req.actorId`
+is always populated for authenticated callers:
 
 ```ts
-// Permission style (middlewares/authorize.ts)
 authorize(); // 401 unless authenticated
 authorize({ only: 'examples:create' }); // 403 unless the permission is granted
 authorize({ oneOf: ['a:read', 'a:x'] }); // at least one required
 authorizeRoles(['SYSADMIN']); // role keys → identity role ids (roleIdByKey)
-
-// Guard style (middlewares/security.ts — shopup-lite's services/security.js)
-router.use(isAuthenticated);
-adminRouter.use([isAuthenticated, onlySuperAdmin]);
 ```
 
 **Permission checks**: a JWT's `permissions` claim is checked locally; bearer callers are checked
@@ -186,10 +212,25 @@ unauthenticated — public routes keep working, protected routes 401.
 **Endpoints**: only `GET /v1/auth/me` (current principal). Login, registration, logout and
 password management happen against the identity service directly.
 
-**Local development** — either point `IDENTITY_SERVICE_URL` at staging, or set `AUTH_SKIP=true`
-to inject a SYSADMIN principal (config rejects it in production; production also requires
-`IDENTITY_SERVICE_URL` and/or `AUTH_JWT_PUBLIC_KEY`, and a non-default `COOKIE_SECRET`).
+**Local development** — either point `IDENTITY_SERVICE_URL` at staging, or set `JIMMY_AUTH=true` (and `JIMMY_IDENTITY=<identity user id>`)
+to inject a SYSADMIN principal (config rejects it in staging and production; those environments also require
+`IDENTITY_SERVICE_URL` and/or `AUTH_JWT_PUBLIC_KEY`, `CORS_ORIGINS`, `GCS_BUCKET` and a non-default `COOKIE_SECRET`).
 
 Deliberately not carried over from shopup-lite: hardcoded bypass tokens, `JIMMY_IDENTITY`,
 whitelisted URLs, the `{ isError, body }` envelope, and 403-for-everything (401 vs 403 are used
 correctly here).
+
+## Project additions (node-express-boilerplate)
+
+| Concern        | Where                                    | Notes                                                                                              |
+| -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Transactions   | `src/db/transaction.ts`                  | `createOrReturnTransaction(tx, cb)` — same helper as our other services                            |
+| Money          | `src/common/utils/money.ts`              | DECIMAL columns are strings end-to-end; arithmetic via decimal.js; Zod `amountSchema` etc.         |
+| File storage   | `src/common/libs/storage.ts`             | GCS when `GCS_BUCKET` is set, local `.storage/` otherwise; sha256 checksum on put                  |
+| Uploads        | `src/common/middlewares/upload.ts`       | `upload('file')` — memory, size cap `UPLOAD_MAX_BYTES`, pdf/jpg/png/docx                           |
+| CORS           | `src/common/middlewares/cors.ts`         | allow-list from `CORS_ORIGINS`, credentials on; required in production                             |
+| Domain errors  | `src/common/errors/app-error.ts`         | `AppError.domain('GATE_BLOCKED', ...)` → 422 with a stable code                                    |
+| Seeds          | `seeds/*.sql`, `npm run seed`            | idempotent reference data, run after migrations                                                    |
+| Local infra    | `docker-compose.yml`, `npm run infra:up` | MySQL 8.4 + Redis 7 with health checks                                                             |
+| CI             | `.github/workflows/ci.yml`               | audit/lint/format/typecheck/test/build; migrations do → undo → do against MySQL; docker build      |
+| Deploy migrate | `.github/workflows/migrate.yml`          | manual: apply migrations + seeds to an environment; the runtime image carries no migration tooling |

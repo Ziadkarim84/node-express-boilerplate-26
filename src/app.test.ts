@@ -11,10 +11,22 @@ vi.mock('./common/libs/identity-api.js', () => ({
         : null,
     ),
   ),
-  checkPermissions: vi.fn((_authHeader: string, permissionIds: string[]) =>
-    Promise.resolve(permissionIds.filter((p) => p.startsWith('examples:'))),
+  checkPermissionsCached: vi.fn(
+    (_authHeader: string, permissionIds: string[]) =>
+      Promise.resolve(permissionIds.filter((p) => p.startsWith('examples:'))),
   ),
 }));
+
+// No DB in these tests: the local users mapping is stubbed.
+vi.mock('./common/libs/users-mirror.js', () => ({
+  resolveLocalUserId: vi.fn((user: { id: number }) =>
+    Promise.resolve(user.id + 100),
+  ),
+}));
+
+// An explicit allow-list so the CSRF guard has something to compare against
+// (with none set, development/test allow every origin).
+process.env.CORS_ORIGINS = 'https://app.example';
 
 const { createApp } = await import('./app.js');
 
@@ -26,7 +38,7 @@ describe('app', () => {
     const res = await request(app).get('/v1/health');
 
     expect(res.status).toBe(200);
-    expect(res.body.data.status).toBe('ok');
+    expect(res.body.body.status).toBe('ok');
     expect(res.headers['x-request-id']).toBeDefined();
   });
 
@@ -42,7 +54,8 @@ describe('app', () => {
     const res = await request(app).get('/nope');
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.isError).toBe(true);
+    expect(res.body.body.code).toBe('NOT_FOUND');
   });
 
   it('returns 401 for protected routes without credentials', async () => {
@@ -53,7 +66,7 @@ describe('app', () => {
     ]) {
       const res = await call;
       expect(res.status).toBe(401);
-      expect(res.body.error.code).toBe('UNAUTHORIZED');
+      expect(res.body.body.code).toBe('UNAUTHORIZED');
     }
   });
 
@@ -63,8 +76,8 @@ describe('app', () => {
       .set('Authorization', 'bearer valid-token');
 
     expect(res.status).toBe(200);
-    expect(res.body.data.id).toBe(7);
-    expect(res.body.data.roleIds).toEqual([7]);
+    expect(res.body.body.id).toBe(7);
+    expect(res.body.body.roleIds).toEqual([7]);
   });
 
   it('rejects invalid bodies with a validation error before hitting the DB', async () => {
@@ -74,8 +87,8 @@ describe('app', () => {
       .send({ name: '', price: -2 });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.body.error.details.length).toBeGreaterThan(0);
+    expect(res.body.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.body.details.length).toBeGreaterThan(0);
   });
 
   it('rejects malformed JSON with 400', async () => {
@@ -86,6 +99,34 @@ describe('app', () => {
       .send('{"broken":');
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('BAD_REQUEST');
+    expect(res.body.body.code).toBe('BAD_REQUEST');
+  });
+
+  it('rejects a cookie-authenticated mutation from a foreign origin (CSRF)', async () => {
+    // cookie-parser's signed format: s:<value>.<base64 hmac-sha256 without '='>
+    const { createHmac } = await import('node:crypto');
+    const mac = createHmac('sha256', 'dev-cookie-secret-change-me')
+      .update('valid-token')
+      .digest('base64')
+      .replace(/=+$/, '');
+    const signed = `s:valid-token.${mac}`;
+
+    const foreign = await request(app)
+      .post('/v1/examples')
+      .set('Cookie', `token=${signed}`)
+      .set('Origin', 'https://evil.example')
+      .send({ name: 'x', code: 'X', price: 1 });
+    expect(foreign.status).toBe(403);
+
+    // Same request from an allowed origin gets past the guard (fails later
+    // on the missing examples:create permission → 403 from authorize, so
+    // assert on the message instead of the status).
+    const own = await request(app)
+      .post('/v1/examples')
+      .set('Cookie', `token=${signed}`)
+      .set('Sec-Fetch-Site', 'same-origin')
+      .send({ name: '', price: -1 });
+    expect(own.status).toBe(400);
+    expect(own.body.body.code).toBe('VALIDATION_ERROR');
   });
 });

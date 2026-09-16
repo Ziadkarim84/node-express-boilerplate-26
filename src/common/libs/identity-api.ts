@@ -10,7 +10,7 @@ import { cacheGet, cacheSet } from './cache.js';
 // Extend with more /v0 endpoints as needed.
 const baseUrl = config.identity.url?.replace(/\/+$/, '');
 
-class IdentityServiceError extends Error {
+export class IdentityServiceError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -33,16 +33,25 @@ async function identityRequest<T>(
     return null;
   }
 
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      authorization: authHeader,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(config.identity.timeoutMs),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        authorization: authHeader,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(config.identity.timeoutMs),
+    });
+  } catch (err) {
+    // Timeout / DNS / connection refused: a dependency failure, not a bug.
+    throw new IdentityServiceError(
+      0,
+      `Identity service ${method} ${path} unreachable: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   // 401/403 = invalid/insufficient token — not an error here.
   if (res.status === 401 || res.status === 403) {
@@ -87,27 +96,50 @@ export async function checkPermissions(
   return Object.keys(response.data).filter((id) => response.data[id]);
 }
 
-// Per-token cache (see cache.ts: Redis when configured, else in-memory) so
+// Per-token caches (see cache.ts: Redis when configured, else in-memory) so
 // hot endpoints don't hit the identity service on every request. Keys are
 // sha256 of the auth header — raw tokens never appear in Redis.
 
-function cacheKey(authHeader: string): string {
-  const hash = createHash('sha256').update(authHeader).digest('hex');
-  return `identity:user:${hash}`;
+function tokenHash(authHeader: string): string {
+  return createHash('sha256').update(authHeader).digest('hex');
 }
+
+// Invalid tokens are cached too (short TTL) so a flood of garbage or expired
+// tokens does not become a flood against the shared identity service.
+const INVALID = { invalid: true } as const;
+type CachedUser = SessionUser | typeof INVALID;
 
 export async function getCurrentUserCached(
   authHeader: string,
 ): Promise<SessionUser | null> {
-  const key = cacheKey(authHeader);
+  const key = `identity:user:${tokenHash(authHeader)}`;
 
-  const cached = await cacheGet<SessionUser>(key);
-  if (cached) return cached;
+  const cached = await cacheGet<CachedUser>(key);
+  if (cached) return 'invalid' in cached ? null : cached;
 
   const user = await getCurrentUser(authHeader);
   if (user) {
     await cacheSet(key, user, config.identity.cacheTtlSeconds);
+  } else if (baseUrl) {
+    await cacheSet(key, INVALID, config.identity.negativeCacheTtlSeconds);
   }
 
   return user;
+}
+
+// Permission results cached per (token, permission set) for the same TTL as
+// the principal, so a protected route costs one identity call per TTL.
+export async function checkPermissionsCached(
+  authHeader: string,
+  permissionIds: string[],
+): Promise<string[]> {
+  const set = [...permissionIds].sort().join(',');
+  const key = `identity:perms:${tokenHash(authHeader)}:${tokenHash(set)}`;
+
+  const cached = await cacheGet<string[]>(key);
+  if (cached) return cached;
+
+  const granted = await checkPermissions(authHeader, permissionIds);
+  await cacheSet(key, granted, config.identity.cacheTtlSeconds);
+  return granted;
 }
